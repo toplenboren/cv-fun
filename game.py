@@ -2,17 +2,6 @@ import pygame
 import sys
 import random
 
-import cv2
-
-# Create a background subtractor object
-bg_subtractor = cv2.createBackgroundSubtractorMOG2()
-
-# Open the video capture (you can replace '0' with the path to a video file)
-cap = cv2.VideoCapture(0)
-
-# Minimum area threshold for a valid moving object
-min_contour_area = 15000
-
 # Initialize Pygame
 pygame.init()
 
@@ -24,6 +13,7 @@ BRICK_WIDTH, BRICK_HEIGHT = 150, 40
 BRICK_HEIGHT_Q = 1
 PADDLE_SPEED = 20
 BALL_SPEED = 10
+TRAIL_LENGTH = 100  # Number of frames for the trail effect
 
 # Colors
 WHITE = (255, 255, 255)
@@ -54,7 +44,7 @@ def get_initial_bricks():
 
 # Create the game window
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Paranoid arkanoid")
+pygame.display.set_caption("Arkanoid Game")
 
 # Create the paddle
 paddle = get_initial_paddle()
@@ -80,11 +70,6 @@ def handle_input():
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-
-            # Release the video capture object and close all windows
-            cap.release()
-            cv2.destroyAllWindows()
-
             pygame.quit()
             sys.exit()
         if event.type == pygame.KEYDOWN:
@@ -170,36 +155,6 @@ def draw_win_screen():
 # Main game loop
 while True:
     handle_input()
-
-    # Handle CV stuff
-
-    # Read a frame from the video feed
-    ret, frame = cap.read()
-    if not ret:
-        # it means we cannot get videofeed
-        exit(1)
-
-    # Apply the background subtractor to get the foreground mask
-    fg_mask = bg_subtractor.apply(frame)
-
-    # Apply some morphological operations to reduce noise
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
-    fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel)
-
-    # Find contours in the foreground mask
-    contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    if contours:
-        max_contour = max(contours, key=cv2.contourArea)
-        M = cv2.moments(max_contour)
-        if M["m00"] != 0:
-            cx = int(M["m10"] / M["m00"])
-            cy = int(M["m01"] / M["m00"])
-
-            # Update the paddle position based on the detected object's position
-            paddle.x = WIDTH - (cx - PADDLE_WIDTH // 2)
-            paddle.x = max(0, min(WIDTH - PADDLE_WIDTH, paddle.x))
 
     should_continue = not game_over and not paused and not win
 
