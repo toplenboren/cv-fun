@@ -184,4 +184,4 @@ while True:
     pygame.display.flip()
 
     # Control the frame rate
-    pygame.time.Clock().tick(60)  # Adjust the value to control the frames per second
+    pygame.time.Clock().tick(60)
