@@ -56,7 +56,7 @@ def get_new_center(bounding_rect, prev_smoothed_center=None):
     center_y = y + h // 2
 
     if prev_smoothed_center is None:
-        return (center_x, center_y)
+        return center_x, center_y
     else:
         return (
             int((1 - SMOOTHING_FACTOR) * prev_smoothed_center[0] + SMOOTHING_FACTOR * center_x),
@@ -123,7 +123,6 @@ def handle_input():
             if event.key == pygame.K_SPACE and not game_over:
                 paused = not paused
             if event.key == pygame.K_r:
-                # Restart the game
                 game_over = False
                 reset_game()
 
