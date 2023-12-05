@@ -3,15 +3,7 @@ import sys
 import random
 
 import cv2
-
-# Create a background subtractor object
-bg_subtractor = cv2.createBackgroundSubtractorMOG2()
-
-# Open the video capture (you can replace '0' with the path to a video file)
-cap = cv2.VideoCapture(0)
-
-# Minimum area threshold for a valid moving object
-min_contour_area = 15000
+import numpy as np
 
 # Initialize Pygame
 pygame.init()
@@ -21,14 +13,56 @@ WIDTH, HEIGHT = 1200, 1000
 BALL_RADIUS = 20
 PADDLE_WIDTH, PADDLE_HEIGHT = 200, 40
 BRICK_WIDTH, BRICK_HEIGHT = 150, 40
-BRICK_HEIGHT_Q = 1
+BRICK_HEIGHT_Q = 3
 PADDLE_SPEED = 20
-BALL_SPEED = 10
+BALL_SPEED = 15
 
 # Colors
 WHITE = (255, 255, 255)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
+
+TARGET_FPS = 60
+
+# Background Subtractor settings
+BG_SUB_HISTORY = 500
+BG_SUB_VAR_THRESHOLD = 10
+BG_SUB_DETECT_SHADOWS = False
+
+# Minimum area threshold for a valid moving object
+MIN_CONTOUR_AREA = 40000
+
+# Smoothing factor for the dot's movement (adjust as needed)
+SMOOTHING_FACTOR = 0.1
+
+KSIZE = (7, 7)
+
+# Create a background subtractor object
+bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+    history=BG_SUB_HISTORY,
+    varThreshold=BG_SUB_VAR_THRESHOLD,
+    detectShadows=BG_SUB_DETECT_SHADOWS
+)
+
+cap = cv2.VideoCapture(0)
+
+last_contour = None
+smoothed_center = None
+
+
+def get_new_center(bounding_rect, prev_smoothed_center=None):
+    x, y, w, h = bounding_rect
+
+    center_x = x + w // 2
+    center_y = y + h // 2
+
+    if prev_smoothed_center is None:
+        return (center_x, center_y)
+    else:
+        return (
+            int((1 - SMOOTHING_FACTOR) * prev_smoothed_center[0] + SMOOTHING_FACTOR * center_x),
+            int((1 - SMOOTHING_FACTOR) * prev_smoothed_center[1] + SMOOTHING_FACTOR * center_y)
+        )
 
 
 def get_initial_paddle():
@@ -80,7 +114,6 @@ def handle_input():
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-
             # Release the video capture object and close all windows
             cap.release()
             cv2.destroyAllWindows()
@@ -149,7 +182,7 @@ def draw_objects():
     pygame.draw.ellipse(screen, RED, ball)
 
     for brick in bricks:
-        pygame.draw.rect(screen, BLUE, brick)
+        pygame.draw.rect(screen, RED, brick)
 
 
 def draw_game_over_screen():
@@ -172,33 +205,43 @@ while True:
     handle_input()
 
     # Handle CV stuff
-
     # Read a frame from the video feed
     ret, frame = cap.read()
     if not ret:
-        # it means we cannot get videofeed
-        exit(1)
+        break
 
     # Apply the background subtractor to get the foreground mask
-    fg_mask = bg_subtractor.apply(frame)
+    fg_mask_raw = bg_subtractor.apply(frame)
 
     # Apply some morphological operations to reduce noise
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, KSIZE)
+    fg_mask = cv2.morphologyEx(fg_mask_raw, cv2.MORPH_OPEN, kernel)
     fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel)
 
     # Find contours in the foreground mask
     contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    if contours:
-        max_contour = max(contours, key=cv2.contourArea)
-        M = cv2.moments(max_contour)
-        if M["m00"] != 0:
-            cx = int(M["m10"] / M["m00"])
-            cy = int(M["m01"] / M["m00"])
+    # Filter contours based on minimum area
+    valid_contours = [contour for contour in contours if cv2.contourArea(contour) > MIN_CONTOUR_AREA]
 
-            # Update the paddle position based on the detected object's position
-            paddle.x = WIDTH - (cx - PADDLE_WIDTH // 2)
+    # Find the contour with the maximum area
+    max_contour = max(valid_contours, key=cv2.contourArea, default=None)
+
+    if max_contour is not None:
+        last_contour = max_contour
+
+    active_contour = last_contour
+
+    if active_contour is not None:
+        # Calculate the center of the bounding area
+        x, y, w, h = cv2.boundingRect(active_contour)
+
+        # Smooth the movement of the dot
+        smoothed_center = get_new_center((x, y, w, h), smoothed_center)
+
+        if smoothed_center is not None:
+            # Update the paddle X position
+            paddle.x = WIDTH - (smoothed_center[0] - PADDLE_WIDTH // 2)
             paddle.x = max(0, min(WIDTH - PADDLE_WIDTH, paddle.x))
 
     should_continue = not game_over and not paused and not win
@@ -229,4 +272,4 @@ while True:
     pygame.display.flip()
 
     # Control the frame rate
-    pygame.time.Clock().tick(60)
+    pygame.time.Clock().tick(TARGET_FPS)
